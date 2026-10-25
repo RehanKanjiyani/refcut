@@ -13,3 +13,5 @@ fixtures/video_only.mp4
 fixtures/clicks.wav
 fixtures/concat.txt
 .env
+
+.vercel

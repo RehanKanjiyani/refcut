@@ -19,6 +19,8 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
 
+import av
+
 from refcut import __version__
 from refcut import blueprint as bp_mod
 from refcut import evidence as evidence_mod
@@ -67,8 +69,14 @@ def analyze():
                 f"video is {meta['duration']:.0f}s; the web limit is "
                 f"{MAX_DURATION_S:.0f}s — trim the clip or use the CLI"))), 400
         evidence, sheet = evidence_mod.build(src, sample_fps=sample_fps)
-    except ValueError:
-        raise
+    except av.FFmpegError:
+        # PyAV error classes subclass ValueError too — catch the FFmpeg side
+        # explicitly so a non-video payload becomes a clear 400, not an HTML 500
+        return _cors(jsonify(error=(
+            "that URL doesn't contain a decodable video. Use a direct link to "
+            "the video file itself (.mp4 / .mov / .webm) — page URLs like "
+            "YouTube links won't work; for those, download the file first and "
+            "use the CLI"))), 400
     except Exception as e:  # noqa: BLE001 - report analysis failures to the client
         return _cors(jsonify(error=f"analysis failed: {type(e).__name__}: {e}")), 500
 
@@ -130,6 +138,12 @@ def _resolve_source(body):
         raise ValueError(f"video exceeds the {MAX_BYTES // (1024 * 1024)}MB web limit")
     if not data:
         raise ValueError("downloaded file is empty")
+    head = data[:512].lstrip().lower()
+    if (head.startswith(b"<!doctype html") or head.startswith(b"<html")
+            or head[:200].startswith(b"<?xml")):
+        raise ValueError(
+            "that URL returned a web page, not a video file — use a direct "
+            "link to the video itself (.mp4 / .mov / .webm)")
     return io.BytesIO(data)
 
 
