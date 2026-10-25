@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>refcut — reference video → editing blueprint</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --accent: #f78166; --accent2: #79c0ff; --ok: #3fb950; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.55 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .2px; }
+  h1 span { color: var(--accent); }
+  .tag { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+          padding: 18px; margin-bottom: 18px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type=text] { flex: 1 1 380px; background: #0d1117; color: var(--text);
+          border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+  button { background: var(--accent); border: none; color: #1a1010; font-weight: 600;
+          border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent2); border: 1px solid var(--border); }
+  button:disabled { opacity: .5; cursor: default; }
+  .status { margin-top: 12px; color: var(--muted); font-size: 14px; white-space: pre-wrap; }
+  .status.err { color: var(--err); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+  .chip { border: 1px solid var(--border); border-radius: 20px; padding: 3px 12px;
+          font-size: 13px; color: var(--muted); }
+  .chip b { color: var(--text); font-weight: 600; }
+  #sheet { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+            border: 1px solid var(--border); vertical-align: -2px; }
+  .badge { font-size: 12px; border-radius: 4px; padding: 1px 7px; }
+  .badge.flash { background: #3d2e00; color: #e3b341; }
+  .badge.sync { background: #12261e; color: var(--ok); }
+  details { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
+  summary { cursor: pointer; color: var(--accent2); font-weight: 500; }
+  textarea { width: 100%; min-height: 130px; background: #0d1117; color: var(--text);
+             border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+             font: 12.5px/1.5 Consolas, Menlo, monospace; }
+  pre { background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+        padding: 14px; overflow: auto; max-height: 520px;
+        font: 12.5px/1.55 Consolas, Menlo, monospace; white-space: pre-wrap; }
+  .muted { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  a { color: var(--accent2); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span>refcut</span> — reference video → editing blueprint</h1>
+  <p class="tag">AI-assisted deconstruction: frame-accurate measured evidence + a VLM semantic pass,
+     compiled into a machine-executable editing plan. Edits are later executed by real NLEs
+     (DaVinci Resolve / After Effects) — never by ffmpeg.</p>
+
+  <div class="card">
+    <div class="row">
+      <input type="text" id="url" placeholder="Direct URL to a video (.mp4 / .mov / .webm) — up to 80 MB, 120 s">
+      <button id="go">Analyze</button>
+      <button id="demo" class="ghost">Use demo clip</button>
+    </div>
+    <div class="status" id="status">The demo clip is a synthetic 6.5 s edit with cuts, a zoom-in/out,
+      camera shake, a 1-frame white flash and a 120 BPM click track.</div>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="card">
+      <h2>Measured evidence</h2>
+      <div class="chips" id="chips"></div>
+      <img id="sheet" alt="contact sheet" class="hidden">
+      <div style="overflow:auto">
+        <table id="shotTable">
+          <thead><tr>
+            <th>Shot</th><th>Start</th><th>Dur</th><th>Transition</th><th>Camera</th>
+            <th>Zoom</th><th>Shake</th><th>Color</th><th>Audio sync</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Semantic pass <span class="muted">(VLM adds meaning: transitions, footage, text, intent)</span></h2>
+      <div id="autoNote" class="muted hidden"></div>
+      <details id="manualPanel" open>
+        <summary>Manual mode — give the prompt + contact sheet to any VLM, paste its JSON here</summary>
+        <p class="muted">1) Copy the analysis prompt (it embeds the measured evidence):
+           <button id="copyPrompt" class="ghost" style="padding:4px 10px">Copy prompt</button>
+           2) Send it with <code>contact_sheet.jpg</code> (download above) to a vision model.
+           3) Paste the JSON reply:</p>
+        <textarea id="analysisJson" placeholder='{"global_style": {...}, "shots": [...]} — strict JSON per the contract'></textarea>
+      </details>
+      <div class="row" style="margin-top:12px">
+        <button id="compile">Compile blueprint</button>
+        <button id="compileBare" class="ghost">Compile measured-only</button>
+      </div>
+    </div>
+
+    <div class="card hidden" id="bpCard">
+      <h2>Editing blueprint</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="ghost" id="dlJson">Download blueprint.json</button>
+        <button class="ghost" id="dlMd">Download blueprint.md</button>
+        <button class="ghost" id="dlEvidence">Download evidence.json</button>
+      </div>
+      <pre id="md"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let LAST = null;    // {evidence, analysis}
+let PROMPT = "";    // analysis prompt text from the server
+let BP_JSON = null; // last compiled blueprint
+
+function status(msg, isErr) {
+  const el = $("status");
+  el.textContent = msg;
+  el.className = "status" + (isErr ? " err" : "");
+}
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ error: "non-JSON response" }));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function analyze(body) {
+  $("go").disabled = $("demo").disabled = true;
+  $("results").classList.add("hidden");
+  status("Downloading + measuring (cuts, zoom, shake, flash, beats) … this can take up to a minute.");
+  try {
+    const j = await api("/api/analyze", body);
+    LAST = { evidence: j.evidence, analysis: j.analysis || null };
+    PROMPT = j.prompt || "";
+    renderEvidence(j);
+    status("Measured. " + (j.auto_analyzed
+      ? "Semantic pass completed automatically by the server-configured VLM."
+      : "Now run the semantic pass (below) or compile measured-only."), false);
+  } catch (e) { status(String(e.message || e), true); }
+  $("go").disabled = $("demo").disabled = false;
+}
+
+function renderEvidence(j) {
+  const ev = j.evidence, v = ev.video;
+  $("results").classList.remove("hidden");
+  const chips = [
+    ["duration", v.duration + "s"], ["fps", v.fps], ["resolution", v.width + "×" + v.height],
+    ["shots", ev.shots.length],
+    ["bpm", ev.audio ? ev.audio.bpm : "—"],
+    ["onsets", ev.audio ? ev.audio.onsets.length : "—"],
+  ];
+  $("chips").innerHTML = chips.map(([k, val]) =>
+    `<span class="chip">${k}: <b>${val}</b></span>`).join("");
+  if (j.contact_sheet_jpeg_b64) {
+    $("sheet").src = "data:image/jpeg;base64," + j.contact_sheet_jpeg_b64;
+    $("sheet").classList.remove("hidden");
+  }
+  const tb = $("shotTable").querySelector("tbody");
+  tb.innerHTML = ev.shots.map(s => {
+    const mm = s.measured_motion, tr = s.transition_in;
+    const trans = tr.type === "flash"
+      ? `<span class="badge flash">flash ${tr.polarity} ${tr.frames}f</span>`
+      : (tr.type === "start" ? "start" : tr.type);
+    const zoom = mm.zoom_pct == null ? "—" : mm.zoom_pct + "%";
+    const cam = (mm.camera_move || []).join(", ");
+    const sync = s.audio_sync
+      ? `<span class="badge sync">${s.audio_sync.bass_impact ? "bass impact " : "onset "}${s.audio_sync.delta_s >= 0 ? "+" : ""}${s.audio_sync.delta_s.toFixed(3)}s${s.audio_sync.on_beat ? " · on beat" : ""}</span>`
+      : "—";
+    const col = s.color ? `<span class="swatch" style="background:${s.color.avg_hex}"></span> ${s.color.avg_hex}` : "—";
+    return `<tr><td><b>${s.id}</b></td><td class="num">${s.start.toFixed(3)}</td>
+      <td class="num">${s.duration.toFixed(2)}s</td><td>${trans}</td>
+      <td>${cam || "—"}</td><td class="num">${zoom}</td>
+      <td class="num">${mm.shake_px == null ? "—" : mm.shake_px + "px"}</td>
+      <td>${col}</td><td>${sync}</td></tr>`;
+  }).join("");
+  if (j.auto_analyzed) {
+    $("autoNote").classList.remove("hidden");
+    $("autoNote").textContent = "Semantic analysis was produced automatically by the server-configured VLM — compile directly.";
+    $("manualPanel").open = false;
+  } else if (j.auto_error) {
+    $("autoNote").classList.remove("hidden");
+    $("autoNote").textContent = "Server VLM failed (" + j.auto_error + ") — use manual mode below.";
+  }
+}
+
+$("go").onclick = () => {
+  const url = $("url").value.trim();
+  if (!url) return status("Paste a direct video URL first.", true);
+  analyze({ url });
+};
+$("demo").onclick = () => analyze({ demo: true });
+$("copyPrompt").onclick = () => {
+  if (!PROMPT) return;
+  navigator.clipboard.writeText(PROMPT).then(() => status("Prompt copied to clipboard."));
+};
+
+$("compile").onclick = async () => {
+  if (!LAST) return;
+  let analysis = LAST.analysis;
+  if (!analysis) {
+    try { analysis = JSON.parse($("analysisJson").value); }
+    catch (e) { return status("Analysis JSON doesn't parse: " + e.message, true); }
+  }
+  await compile(analysis);
+};
+$("compileBare").onclick = () => compile(null);
+
+async function compile(analysis) {
+  status("Compiling blueprint …");
+  try {
+    const j = await api("/api/blueprint", { evidence: LAST.evidence, analysis });
+    BP_JSON = j.blueprint;
+    $("bpCard").classList.remove("hidden");
+    $("md").textContent = j.markdown;
+    download("blueprint.json", JSON.stringify(j.blueprint, null, 2), "application/json");
+    status("Blueprint compiled — blueprint.json download started.", false);
+    $("bpCard").scrollIntoView({ behavior: "smooth" });
+  } catch (e) { status(String(e.message || e), true); }
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: type || "text/plain" }));
+  a.download = name;
+  a.click();
+}
+$("dlJson").onclick = () => BP_JSON &&
+  download("blueprint.json", JSON.stringify(BP_JSON, null, 2), "application/json");
+$("dlEvidence").onclick = () => LAST && download("evidence.json",
+  JSON.stringify(LAST.evidence, null, 2), "application/json");
+$("dlMd").onclick = () => download("blueprint.md", $("md").textContent);
+function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
+</script>
+</body>
+</html>

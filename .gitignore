@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+refcut_out/
+.vercel/
+fixtures/s1.mp4
+fixtures/s2.mp4
+fixtures/s3.mp4
+fixtures/s4.mp4
+fixtures/s5.mp4
+fixtures/s6.mp4
+fixtures/flash.mp4
+fixtures/video_only.mp4
+fixtures/clicks.wav
+fixtures/concat.txt
+.env

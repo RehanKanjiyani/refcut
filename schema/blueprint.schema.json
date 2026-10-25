@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "refcut editing blueprint",
+  "description": "Machine-executable editing plan derived from a reference video. Times are seconds from video start at the reference fps. Content (what footage is needed) is separated from craft (how it is cut). Provenance splits measured from inferred values. Prototype 2 compiles this into real NLE projects.",
+  "type": "object",
+  "required": ["schema", "meta", "timeline"],
+  "properties": {
+    "schema": {"const": "refcut-blueprint-0.1"},
+    "meta": {
+      "type": "object",
+      "required": ["reference", "fps", "duration", "shot_count"],
+      "properties": {
+        "reference": {"type": "string"},
+        "fps": {"type": "number"},
+        "resolution": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+        "duration": {"type": "number"},
+        "shot_count": {"type": "integer"}
+      }
+    },
+    "global_style": {"type": "object"},
+    "audio_map": {
+      "type": ["object", "null"],
+      "properties": {
+        "bpm": {"type": "number"},
+        "beat_times": {"type": "array", "items": {"type": "number"}},
+        "impacts": {"type": "array"},
+        "silences": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}}
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "start", "duration"],
+        "properties": {
+          "id": {"type": "string"},
+          "start": {"type": "number", "description": "seconds; first shot starts at 0"},
+          "duration": {"type": "number"},
+          "content": {
+            "type": "object",
+            "description": "CONTENT, not craft: what footage this slot needs",
+            "properties": {
+              "footage_required": {"type": ["string", "null"]},
+              "framing": {"type": ["string", "null"]},
+              "subject_motion": {"type": ["string", "null"]},
+              "on_screen_text": {"type": ["string", "null"]}
+            }
+          },
+          "timing": {
+            "type": "object",
+            "properties": {
+              "speed_curve": {
+                "type": "array",
+                "description": "playback speed keyframes, t in 0..1 normalized shot time, v in percent",
+                "items": {
+                  "type": "object",
+                  "properties": {"t": {"type": "number"}, "v": {"type": "number"}}
+                }
+              },
+              "speed_feel": {"type": "string"}
+            }
+          },
+          "transform": {
+            "type": "object",
+            "properties": {
+              "scale": {
+                "type": ["object", "null"],
+                "properties": {
+                  "direction": {"enum": ["in", "out", "none"]},
+                  "end_scale_pct": {"type": "number"}
+                }
+              },
+              "scale_curve": {"type": "array"},
+              "pan_pct": {"type": ["object", "null"]}
+            }
+          },
+          "effects": {"type": "object"},
+          "transition_in": {
+            "type": "object",
+            "properties": {
+              "type": {"type": "string"},
+              "measured": {"type": ["object", "null"]},
+              "note": {"type": ["string", "null"]}
+            }
+          },
+          "text": {"type": "array"},
+          "audio": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["op"],
+              "properties": {
+                "op": {"type": "string", "description": "impact_sfx | align_to_beat | whoosh | ..."},
+                "at": {"type": "number"},
+                "source": {"enum": ["measured", "inferred"]}
+              }
+            }
+          },
+          "color": {"type": "object"},
+          "pattern_refs": {"type": "array", "items": {"type": "string"}},
+          "confidence": {"type": ["number", "null"]},
+          "provenance": {
+            "type": "object",
+            "properties": {
+              "measured": {"type": "array", "items": {"type": "string"}},
+              "inferred": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "compilation": {"type": "object"}
+  }
+}
